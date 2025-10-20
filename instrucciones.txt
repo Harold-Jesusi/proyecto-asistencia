@@ -1,0 +1,55 @@
+# Navegar a tu directorio de proyecto
+cd /home/h/Documentos/CONTROL\ ASISTENCIAS/
+
+# Crear entorno virtual
+python -m venv venv_asistencias
+
+# Activar entorno virtual
+source venv_asistencias/bin/activate
+
+# Instalar dependencias necesarias
+sudo pacman -S cmake python-pip openblas lapack
+
+# Con el entorno virtual ACTIVADO, instalar:
+pip install --upgrade pip
+
+# Instalar dependencias principales
+pip install dlib face_recognition opencv-python numpy pillow
+
+
+####################################
+### PARA SISTEMA OPERATIVO UBUNTU ##
+#####################################
+
+# Crear carpeta del proyecto
+mkdir -p ~/Documentos/proyecto-asistencia
+cd ~/Documentos/proyecto-asistencia
+
+# Crear entorno virtual
+python3 -m venv venv_asistencias
+
+# Activar entorno virtual
+source venv_asistencias/bin/activate
+
+----------------------------
+# Actualizar sistema
+sudo apt update && sudo apt upgrade -y
+
+# Instalar dependencias del sistema
+sudo apt install -y python3-pip python3-venv cmake build-essential
+sudo apt install -y libopenblas-dev liblapack-dev libx11-dev libgtk-3-dev
+sudo apt install -y libboost-all-dev libjpeg-dev libpng-dev libtiff-dev
+sudo apt install -y libavcodec-dev libavformat-dev libswscale-dev libv4l-dev
+sudo apt install -y libcanberra-gtk-module libcanberra-gtk3-module
+--------------------------
+# Con el entorno virtual ACTIVADO
+pip install --upgrade pip
+
+# Instalar dependencias principales (en este orden)
+pip install cmake
+pip install numpy
+pip install dlib
+pip install face_recognition
+pip install opencv-python
+pip install pillow
+pip install pandas  # Para futuros reportes
