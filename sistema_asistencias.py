@@ -28,9 +28,9 @@ class SistemaAsistencias:
         print(f"🔍 Sistema listo con {len(self.known_face_encodings)} encodings de {len(set(self.known_face_ids))} estudiantes")
     
     def procesar_frame_mejorado(self, frame):
-        """Procesar frame con mejor detección y suavizado"""
+
         self.frame_count += 1
-        
+    
         # Procesar solo cada X frames para mejor performance
         if self.frame_count % self.frame_skip != 0:
             return [], [], [], []
@@ -39,7 +39,7 @@ class SistemaAsistencias:
         small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
         rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
         
-        # Usar modelo HOG (más rápido) o CNN (más preciso pero lento)
+        # Usar modelo HOG para mejor performance
         face_locations = face_recognition.face_locations(rgb_small_frame, model="hog")
         face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
         
@@ -47,8 +47,11 @@ class SistemaAsistencias:
         face_ids = []
         confianzas = []
         
+        # Lista para evitar registrar múltiples veces en el mismo frame
+        estudiantes_registrados_este_frame = []
+        
         for face_encoding in face_encodings:
-            # Comparar con rostros conocidos con tolerancia más estricta
+            # Comparar con rostros conocidos
             face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)
             
             if len(face_distances) > 0:
@@ -58,14 +61,15 @@ class SistemaAsistencias:
                 # Convertir distancia a confianza (0-1)
                 confianza = 1 - best_distance
                 
-                # Umbral más alto para mejor precisión
-                if best_distance < 0.5:  # Más estricto que antes
+                # Umbral más permisivo para mejor detección
+                if best_distance < 0.6:  # Más permisivo que antes
                     name = self.known_face_names[best_match_index]
                     estudiante_id = self.known_face_ids[best_match_index]
                     
-                    # Registrar asistencia solo si la confianza es alta
-                    if confianza > 0.7:
+                    # Registrar asistencia solo si la confianza es alta y no se registró ya en este frame
+                    if confianza > 0.6 and estudiante_id not in estudiantes_registrados_este_frame:
                         self.registrar_asistencia_unica(estudiante_id, confianza)
+                        estudiantes_registrados_este_frame.append(estudiante_id)
                 else:
                     name = "Desconocido"
                     estudiante_id = None
@@ -81,7 +85,7 @@ class SistemaAsistencias:
         
         # Escalar coordenadas de vuelta al tamaño original
         face_locations = [(top * 2, right * 2, bottom * 2, left * 2) 
-                         for (top, right, bottom, left) in face_locations]
+                        for (top, right, bottom, left) in face_locations]
         
         # Aplicar suavizado a las detecciones
         face_locations, face_names, face_ids, confianzas = self.aplicar_suavizado(
@@ -91,13 +95,13 @@ class SistemaAsistencias:
         return face_locations, face_names, face_ids, confianzas
     
     def aplicar_suavizado(self, face_locations, face_names, face_ids, confianzas):
-        """Aplicar suavizado para reducir parpadeo en detecciones"""
+        """Aplicar suavizado mejorado para reducir parpadeo"""
         current_time = time.time()
         
-        # Limpiar detecciones antiguas
+        # Limpiar detecciones antiguas (más tiempo para mejor estabilidad)
         to_remove = []
         for key in self.detection_history:
-            if current_time - self.detection_history[key]['timestamp'] > 2.0:  # 2 segundos
+            if current_time - self.detection_history[key]['timestamp'] > 3.0:  # 3 segundos en lugar de 2
                 to_remove.append(key)
         
         for key in to_remove:
@@ -106,18 +110,21 @@ class SistemaAsistencias:
         # Actualizar historial con detecciones actuales
         for i, (location, name, face_id, confianza) in enumerate(zip(face_locations, face_names, face_ids, confianzas)):
             if face_id and name != "Desconocido":
-                key = f"{face_id}_{i}"
+                key = f"{face_id}"
                 if key not in self.detection_history:
                     self.detection_history[key] = {
                         'locations': [],
                         'names': [],
                         'confianzas': [],
-                        'timestamp': current_time
+                        'timestamp': current_time,
+                        'count': 0
                     }
                 
                 self.detection_history[key]['locations'].append(location)
                 self.detection_history[key]['names'].append(name)
                 self.detection_history[key]['confianzas'].append(confianza)
+                self.detection_history[key]['count'] += 1
+                self.detection_history[key]['timestamp'] = current_time
                 
                 # Mantener solo el historial reciente
                 if len(self.detection_history[key]['locations']) > self.history_length:
@@ -125,35 +132,53 @@ class SistemaAsistencias:
                     self.detection_history[key]['names'].pop(0)
                     self.detection_history[key]['confianzas'].pop(0)
         
-        # Si no hay detecciones actuales pero hay historial, usar el historial
-        if len(face_locations) == 0 and len(self.detection_history) > 0:
-            for key, history in self.detection_history.items():
+        # Usar historial para estabilizar detecciones actuales
+        stabilized_locations = []
+        stabilized_names = []
+        stabilized_ids = []
+        stabilized_confianzas = []
+        
+        for key, history in self.detection_history.items():
+            if history['count'] >= 2:  # Solo usar si se detectó al menos 2 veces
                 if len(history['locations']) > 0:
-                    # Usar la última ubicación conocida
-                    avg_location = history['locations'][-1]
+                    # Usar la ubicación promedio del historial
+                    avg_location = (
+                        int(np.mean([loc[0] for loc in history['locations']])),
+                        int(np.mean([loc[1] for loc in history['locations']])),
+                        int(np.mean([loc[2] for loc in history['locations']])),
+                        int(np.mean([loc[3] for loc in history['locations']]))
+                    )
                     avg_name = max(set(history['names']), key=history['names'].count)
                     avg_confianza = np.mean(history['confianzas'])
                     
-                    face_id = int(key.split('_')[0]) if '_' in key else None
+                    face_id = int(key) if key.isdigit() else None
                     
-                    face_locations.append(avg_location)
-                    face_names.append(avg_name)
-                    face_ids.append(face_id)
-                    confianzas.append(avg_confianza)
+                    stabilized_locations.append(avg_location)
+                    stabilized_names.append(avg_name)
+                    stabilized_ids.append(face_id)
+                    stabilized_confianzas.append(avg_confianza)
         
-        return face_locations, face_names, face_ids, confianzas
+        # Si hay detecciones actuales, priorizarlas sobre el historial
+        if face_locations:
+            return face_locations, face_names, face_ids, confianzas
+        else:
+            return stabilized_locations, stabilized_names, stabilized_ids, stabilized_confianzas
     
     def dibujar_resultados_mejorados(self, frame, face_locations, face_names, confianzas):
-        """Dibujar resultados mejorados en el frame"""
+        """Dibujar resultados mejorados con información de asistencias"""
+        estudiantes_detectados = set()
+        
         for (top, right, bottom, left), name, confianza in zip(face_locations, face_names, confianzas):
             if name == "Desconocido":
                 color = (0, 0, 255)  # Rojo para desconocidos
                 texto_confianza = f"{confianza:.2f}"
             else:
-                if confianza > 0.8:
+                if confianza > 0.7:
                     color = (0, 255, 0)  # Verde para alta confianza
-                elif confianza > 0.6:
+                    estudiantes_detectados.add(name)
+                elif confianza > 0.5:
                     color = (0, 255, 255)  # Amarillo para confianza media
+                    estudiantes_detectados.add(name)
                 else:
                     color = (0, 165, 255)  # Naranja para confianza baja
                 texto_confianza = f"{confianza:.2f}"
@@ -174,13 +199,19 @@ class SistemaAsistencias:
         rostros_reconocidos = sum(1 for name in face_names if name != "Desconocido")
         
         cv2.putText(frame, f"Estudiantes: {rostros_reconocidos}/{rostros_totales}", 
-                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # Mostrar estudiantes detectados
+        if estudiantes_detectados:
+            estudiantes_texto = f"Detectados: {', '.join(estudiantes_detectados)}"
+            cv2.putText(frame, estudiantes_texto, 
+                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         cv2.putText(frame, f"FPS: {self.calcular_fps()}", 
-                   (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
         cv2.putText(frame, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                   (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         return frame
     
@@ -195,6 +226,23 @@ class SistemaAsistencias:
         self.fps = 1 / (current_time - self.last_time)
         self.last_time = current_time
         return int(self.fps)
+    
+    def registrar_asistencia_unica(self, estudiante_id, confianza):
+        """Registrar asistencia solo si no se ha registrado hoy"""
+        hoy = datetime.now().date()
+        conn = self.db._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id FROM asistencias 
+            WHERE estudiante_id = ? AND fecha = ? AND metodo_deteccion = 'rostro'
+        ''', (estudiante_id, hoy))
+        
+        if cursor.fetchone() is None:
+            self.db.registrar_asistencia(estudiante_id, 'rostro', confianza)
+            print(f"✅ Asistencia registrada: Estudiante {estudiante_id}")
+        
+        conn.close()
     
     def iniciar_monitoreo_mejorado(self):
         """Iniciar el sistema de monitoreo mejorado"""

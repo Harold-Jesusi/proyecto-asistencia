@@ -6,7 +6,7 @@ import os
 def mostrar_menu():
     print("\n🎓 SISTEMA DE CONTROL DE ASISTENCIAS ESCOLARES - MEJORADO")
     print("=" * 60)
-    print("1. Registrar nuevo estudiante (10 imágenes)")
+    print("1. Registrar nuevo estudiante")
     print("2. Listar estudiantes registrados")
     print("3. Verificar estado del sistema")
     print("4. Iniciar monitoreo MEJORADO de asistencias")

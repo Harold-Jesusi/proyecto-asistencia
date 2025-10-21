@@ -157,22 +157,30 @@ class DatabaseManager:
         
         ahora = datetime.now()
         fecha = ahora.date()
-        hora = ahora.time()
+        hora = ahora.time().strftime('%H:%M:%S')  # CONVERTIR A STRING
         
         # Determinar estado basado en la hora
         cursor.execute('SELECT hora_entrada, tolerancia_minutos FROM configuracion WHERE id = 1')
         config = cursor.fetchone()
-        hora_entrada = datetime.strptime(config[0], '%H:%M:%S').time()
-        tolerancia = config[1]
         
-        # Calcular si es tardanza
-        hora_limite = datetime.combine(ahora.date(), hora_entrada)
-        hora_limite = hora_limite.replace(minute=hora_limite.minute + tolerancia)
-        
-        if ahora > hora_limite:
-            estado = 'tardanza'
+        if config:
+            hora_entrada_str = config[0]
+            tolerancia = config[1]
+            
+            # Convertir hora_entrada a datetime para comparación
+            hora_entrada = datetime.strptime(hora_entrada_str, '%H:%M:%S').time()
+            
+            # Calcular si es tardanza
+            hora_actual = ahora.time()
+            hora_limite = datetime.combine(ahora.date(), hora_entrada)
+            hora_limite = hora_limite.replace(minute=hora_limite.minute + tolerancia)
+            
+            if ahora > hora_limite:
+                estado = 'tardanza'
+            else:
+                estado = 'presente'
         else:
-            estado = 'presente'
+            estado = 'presente'  # Default si no hay configuración
         
         cursor.execute('''
             INSERT INTO asistencias (estudiante_id, fecha, hora, metodo_deteccion, estado, confianza)
@@ -211,3 +219,7 @@ class DatabaseManager:
         conn.close()
         
         return estudiante
+    
+    def _get_connection(self):
+        return sqlite3.connect(self.db_path)
+        
