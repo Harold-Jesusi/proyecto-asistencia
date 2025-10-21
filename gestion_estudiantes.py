@@ -5,6 +5,7 @@ import os
 import time
 from database import DatabaseManager
 from datetime import datetime
+from camara_utils import capturar_rostros_interactivo
 
 class GestorEstudiantes:
     def __init__(self):
@@ -113,15 +114,15 @@ class GestorEstudiantes:
         return capturas_exitosas > 0
     
     def capturar_fotos_primero(self, nombre, apellido):
-        """NUEVO: Primero capturar fotos, luego registrar en BD"""
+        """Primero capturar fotos, luego registrar en BD - VERSIÓN MEJORADA"""
         print(f"🎯 Registrando: {nombre} {apellido}")
         print("Primero capturaremos las fotos, luego el registro en base de datos")
         
         # Crear un ID temporal para las fotos
         temp_id = f"temp_{int(time.time())}"
         
-        # Capturar fotos primero
-        if self.capturar_multiples_rostros(temp_id, nombre, apellido, num_capturas=5):
+        # Capturar fotos primero usando la nueva función
+        if capturar_rostros_interactivo(temp_id, nombre, apellido, self.db, num_capturas=5):
             # Si las fotos se capturaron bien, ahora registrar en BD
             edad = input("Edad (opcional): ").strip()
             seccion = input("Sección (opcional): ").strip()
@@ -138,9 +139,6 @@ class GestorEstudiantes:
             if estudiante_id:
                 print(f"🎯 Código asignado: {codigo_asignado}")
                 
-                # Renombrar las fotos con el ID real
-                self.renombrar_fotos(temp_id, estudiante_id, nombre, apellido)
-                
                 # Actualizar los encodings con el ID real
                 self.actualizar_encodings(temp_id, estudiante_id)
                 
@@ -148,8 +146,6 @@ class GestorEstudiantes:
                 return estudiante_id
             else:
                 print("❌ Error al registrar en base de datos")
-                # Eliminar fotos temporales
-                self.eliminar_fotos_temp(temp_id)
                 return None
         else:
             print("❌ No se capturaron fotos. Registro cancelado.")
